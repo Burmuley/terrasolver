@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -13,23 +14,37 @@ var (
 	cfgVar_TERRASOLVER_SKIP_CONFIRM = "TERRASOLVER_SKIP_CONFIRM"
 )
 
+const (
+	tsPathDefault =
+)
+
 func main() {
 	// TODO: replace with cmd parameters parsing
+	cwd, _ := os.Getwd()
+	tsPath := flag.String("path", cwd, "Path to Terragrunt working directory")
+	tsSkipConfirm := flag.Bool("skip-confirm", false, "Skip confirmation user input request")
+	flag.Parse()
+	tgArgs := flag.Args()
+
+	config := map[string]string{
+		"TERRASOLVER_PATH": *tsPath,
+		"TERRASOLVER_SKIP_CONFIRM": fmt.Sprintf("%b", *tsSkipConfirm),
+	}
 	config := readConfigEnv()
 
-	modules_path, _ := os.Getwd()
+	modulesPath, _ := os.Getwd()
 
 	if path, ok := config[cfgVar_TERRASOLVER_PATH]; ok {
-		modules_path = path
+		modulesPath = path
 	}
 
 	//path := "test/env1"
-	modules_path, _ = filepath.Abs(modules_path)
-	fmt.Println("Terragrunt modules directory:", modules_path)
+	modulesPath, _ = filepath.Abs(modulesPath)
+	log.Println("Terragrunt modules directory:", modulesPath)
 	terragrunt_bin := "terragrunt"
 
 	// Find all .hcl files in underlying directory tree
-	files, err := FindFilesByExt(modules_path, ".hcl")
+	files, err := FindFilesByExt(modulesPath, ".hcl")
 
 	if err != nil {
 		log.Fatal(err)
@@ -48,7 +63,7 @@ func main() {
 		log.Fatal(errConvertIdToPath(err, d))
 	}
 
-	fmt.Printf("Running order for modules in '%s':\n", modules_path)
+	fmt.Printf("Running order for modules in '%s':\n", modulesPath)
 	printList(sorted)
 	if _, ok := config[cfgVar_TERRASOLVER_SKIP_CONFIRM]; !ok {
 		fmt.Println("Press ENTER to continue...")
@@ -59,8 +74,9 @@ func main() {
 	q := NewExecQueue(sorted)
 
 	for m := q.Next(); m != nil; m = q.Next() {
-		fmt.Println(terragrunt_bin, " ", os.Args[1:])
-		err := m.Exec(terragrunt_bin, os.Args[1:]...)
+		log.Printf("Working on %s ...\n", m.Path)
+		log.Println(terragrunt_bin, " ", tgArgs)
+		err := m.Exec(terragrunt_bin, tgArgs...)
 		if err != nil {
 			log.Fatal(err)
 		}

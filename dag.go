@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -78,7 +79,13 @@ func (d *DAG) FillDAGFromFiles(files []string, deepDive bool, inds map[string]st
 			}
 
 			if err = d.AddEdge(fid, pid); err != nil {
-				return err
+				// skip adding edge if error is EdgeDuplicateError
+				// return err in all other cases
+				if errors.As(err, &dag.EdgeDuplicateError{}) {
+					log.Printf("%s, skipping", errConvertIdToPath(err, d))
+				} else {
+					return err
+				}
 			}
 
 			if deepDive {
@@ -91,7 +98,6 @@ func (d *DAG) FillDAGFromFiles(files []string, deepDive bool, inds map[string]st
 				if err := d.FillDAGFromFiles(files, deepDive, inds); err != nil {
 					return err
 				}
-
 			}
 		}
 	}

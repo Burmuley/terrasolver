@@ -1,22 +1,24 @@
 package main
 
 import (
-	"github.com/creack/pty"
-	"golang.org/x/crypto/ssh/terminal"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
+
+	"github.com/creack/pty"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 type Queue interface {
-	Next() *ExecModule
+	Next() Module
 }
 
 type Module interface {
-	Exec(string, ...string) ([]byte, error)
+	Exec(string, ...string) error
+	GetPath() string
 }
 
 type ExecModule struct {
@@ -25,6 +27,10 @@ type ExecModule struct {
 	Stdout    []byte
 	Stderr    []byte
 	ExitCode  int
+}
+
+func (m *ExecModule) GetPath() string {
+	return m.Path
 }
 
 func (m *ExecModule) Exec(name string, arg ...string) error {
@@ -37,7 +43,7 @@ func (m *ExecModule) Exec(name string, arg ...string) error {
 		return startErr
 	}
 
-	// Handle pty size.
+	// Handle pty size
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
 	go func() {
@@ -48,14 +54,14 @@ func (m *ExecModule) Exec(name string, arg ...string) error {
 		}
 	}()
 	ch <- syscall.SIGWINCH                        // Initial resize.
-	defer func() { signal.Stop(ch); close(ch) }() // Cleanup signals when done.
+	defer func() { signal.Stop(ch); close(ch) }() // Cleanup signals when done
 
 	// Set stdin in raw mode.
 	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		panic(err)
 	}
-	defer func() { _ = terminal.Restore(int(os.Stdin.Fd()), oldState) }() // Best effort.
+	defer func() { _ = terminal.Restore(int(os.Stdin.Fd()), oldState) }() // Best effort
 
 	// Copy stdin to the pty and back to Stdout
 	go func() { _, _ = io.Copy(pt, os.Stdin) }()
@@ -65,11 +71,11 @@ func (m *ExecModule) Exec(name string, arg ...string) error {
 }
 
 type ExecQueue struct {
-	modules []*ExecModule
+	modules []Module
 	current int // index in the modules slice of the currently running module
 }
 
-func (e *ExecQueue) Next() *ExecModule {
+func (e *ExecQueue) Next() Module {
 	if e.current >= len(e.modules)-1 {
 		return nil
 	}
@@ -78,9 +84,9 @@ func (e *ExecQueue) Next() *ExecModule {
 	return e.modules[e.current]
 }
 
-func NewExecQueue(modules []string) *ExecQueue {
+func NewExecQueue(modules []string) Queue {
 	q := &ExecQueue{
-		modules: make([]*ExecModule, 0, len(modules)),
+		modules: make([]Module, 0, len(modules)),
 	}
 
 	for _, m := range modules {

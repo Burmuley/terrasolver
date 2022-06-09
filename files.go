@@ -20,6 +20,7 @@ func ignorePath(p string, ignore []string) bool {
 
 	return false
 }
+
 func FindFilesByExt(dir string, ext string) ([]string, error) {
 	files := make([]string, 0)
 

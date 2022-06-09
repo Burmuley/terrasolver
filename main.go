@@ -1,3 +1,56 @@
+/*
+Terrasolver scans directory structure looking for .hcl files with Terragrunt dependencies definitions.
+All dependencies are grouped into a DAG (Directed Acyclic Graph) and then sorted to calculate proper order of execution.
+Each module is represented as a directory with `terragrunt.hcl` file.
+
+After dependency graph is calculated the tool simply goes over the list and passes the command to Terragrunt.
+
+Usage:
+    terrasolver [flags] [terragrunt command and parameters]
+
+Flags
+    -path
+        Path to the working directory where to run all activities. Is omitted will use current directory.
+    -skip-confirm
+        Skip confirmation step after the ordered list modules is displayed,
+        will continue with running Terragrunt command against each module.
+    -terragrunt
+        Path to the Terragrunt binary. The default is /usr/local/bin/terragrunt
+    -deepdive
+        If set to false will only scan current working directory for dependencies.
+        If set to true - will also recursively scan dependencies referenced in files within the working directory
+        to build the complete dependency tree if any of modules enlist dependencies out of the working directory.
+
+Environment variables
+
+All the flags listed above can be also overridden by corresponding environment variable.
+
+Note: flags set with environment variables take precedence over flags in command line!
+
+    TERRASOLVER_PATH - same as -path flag
+    TERRASOLVER_SKIP_CONFIRM - same as -skip-confirm flag
+    TERRASOLVER_TERRAGRUNT_BIN" - same as -terragrunt flag
+    TERRASOLVER_DEEP_DIVE - same as -deepdive flag
+
+Example:
+    terrasolver -path=/home/user/infrastructure/dev -deepdive=true apply -auto-approve
+
+    -path=test/env1/us-west-2/code-deploy -deepdive=true plan                                                            burmuley@RRG-MacPro15
+    2022/06/08 21:01:18 Terragrunt modules directory: /home/user/infrastructure/dev
+    Running order for modules in '/home/user/infrastructure/dev':
+    #1: /home/user/infrastructure/dev/us-west-2/ecs-clusters
+    #2: /home/user/infrastructure/dev/us-west-2/target-groups
+    #3: /home/user/infrastructure/dev/us-west-2/load-balancers
+    #4: /home/user/infrastructure/dev/us-west-2/kms-keys
+    #5: /home/user/infrastructure/dev/us-east-1/kms-replica-keys
+    #6: /home/user/infrastructure/dev/us-west-2/s3-buckets
+    #7: /home/user/infrastructure/dev/us-east-1/s3-buckets
+    #8: /home/user/infrastructure/dev/global/iam-roles
+    #9: /home/user/infrastructure/dev/us-west-2/code-deploy
+    Press ENTER to continue...
+
+*/
+
 package main
 
 import (
@@ -7,100 +60,116 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-)
-
-var (
-	cfgVar_TERRASOLVER_PATH         = "TERRASOLVER_PATH"
-	cfgVar_TERRASOLVER_SKIP_CONFIRM = "TERRASOLVER_SKIP_CONFIRM"
+	"strconv"
+	"strings"
 )
 
 const (
-	tsPathDefault =
+	cfgTerrasolverPath        = "TERRASOLVER_PATH"
+	cfgTerrasolverSkipConfirm = "TERRASOLVER_SKIP_CONFIRM"
+	cfgTerragruntBinary       = "TERRASOLVER_TERRAGRUNT_BIN"
+	cfgTerrasolverDeepDive    = "TERRASOLVER_DEEP_DIVE"
+	cfgTerrasolverAutoApprove = "TERRASOLVER_AUTO_APPROVE"
+)
+
+var (
+	version    string = "no version set"
+	commit     string = "no commit set"
+	repository        = "github.com/Burmuley/terrasolver"
+)
+
+const (
+	terragruntBinDefault = "/usr/local/bin/terragrunt"
 )
 
 func main() {
-	// TODO: replace with cmd parameters parsing
+	// setup and parse command line args
 	cwd, _ := os.Getwd()
 	tsPath := flag.String("path", cwd, "Path to Terragrunt working directory")
 	tsSkipConfirm := flag.Bool("skip-confirm", false, "Skip confirmation user input request")
+	tsTerragruntBin := flag.String("terragrunt", terragruntBinDefault, "Path to Terragrunt binary")
+	tsDeepDive := flag.Bool("deepdive", false, "Deep scan for dependencies")
+	tsAddAutoApprove := flag.Bool("auto-approve", false, "Automatically add `-auto-approve` flag to the Terragrunt arugs")
+	tsVersion := flag.Bool("version", false, "Show version information")
 	flag.Parse()
 	tgArgs := flag.Args()
 
+	if *tsVersion {
+		fmt.Println("Version: ", version)
+		fmt.Println("Repository: ", repository)
+		fmt.Println("Git commit: ", commit)
+		os.Exit(0)
+	}
+
 	config := map[string]string{
-		"TERRASOLVER_PATH": *tsPath,
-		"TERRASOLVER_SKIP_CONFIRM": fmt.Sprintf("%b", *tsSkipConfirm),
+		cfgTerrasolverPath:        *tsPath,
+		cfgTerrasolverSkipConfirm: fmt.Sprintf("%v", *tsSkipConfirm),
+		cfgTerragruntBinary:       *tsTerragruntBin,
+		cfgTerrasolverDeepDive:    fmt.Sprintf("%v", *tsDeepDive),
+		cfgTerrasolverAutoApprove: fmt.Sprintf("%v", *tsAddAutoApprove),
 	}
-	config := readConfigEnv()
+	config = readConfigEnv(config)
 
-	modulesPath, _ := os.Getwd()
+	// check if auto-approve is present in tgArgs and add if missing
+	autoApprove, _ := strconv.ParseBool(config[cfgTerrasolverAutoApprove])
+	if autoApprove {
+		hasAutoApprove := false
+		for _, arg := range tgArgs {
+			if strings.Contains(arg, "-auto-approve") {
+				hasAutoApprove = true
+				break
+			}
+		}
 
-	if path, ok := config[cfgVar_TERRASOLVER_PATH]; ok {
-		modulesPath = path
+		if !hasAutoApprove {
+			tgArgs = append(tgArgs, "-auto-approve")
+		}
 	}
 
-	//path := "test/env1"
+	modulesPath, _ := config[cfgTerrasolverPath]
 	modulesPath, _ = filepath.Abs(modulesPath)
 	log.Println("Terragrunt modules directory:", modulesPath)
-	terragrunt_bin := "terragrunt"
+	terragruntBin := config[cfgTerragruntBinary]
 
 	// Find all .hcl files in underlying directory tree
 	files, err := FindFilesByExt(modulesPath, ".hcl")
-
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Create a DAG and fill it from the list of detected Terragrunt modules
-	d := NewDAG()
-	if err := d.FillDAGFromFiles(files); err != nil {
-		log.Fatal(errConvertIdToPath(err, d))
+	dag := NewDAG()
+	deepDive, _ := strconv.ParseBool(config[cfgTerrasolverDeepDive])
+	inds := make(map[string]string)
+	if err := dag.FillDAGFromFiles(files, deepDive, inds); err != nil {
+		log.Fatal(errConvertIdToPath(err, dag))
 	}
 
-	//fmt.Println(d)
-	sorted, err := d.TopologicalSort()
-
+	sorted, err := dag.TopologicalSort()
 	if err != nil {
-		log.Fatal(errConvertIdToPath(err, d))
+		log.Fatal(errConvertIdToPath(err, dag))
 	}
 
 	fmt.Printf("Running order for modules in '%s':\n", modulesPath)
-	printList(sorted)
-	if _, ok := config[cfgVar_TERRASOLVER_SKIP_CONFIRM]; !ok {
+	for n, s := range sorted {
+		fmt.Printf("#%d: %s\n", n+1, s)
+	}
+
+	skipConfirm, _ := strconv.ParseBool(config[cfgTerrasolverSkipConfirm])
+	if !skipConfirm {
 		fmt.Println("Press ENTER to continue...")
 		b := bufio.NewReader(os.Stdin)
-		b.ReadString('\n')
+		_, _ = b.ReadString('\n')
 	}
 
 	q := NewExecQueue(sorted)
 
 	for m := q.Next(); m != nil; m = q.Next() {
-		log.Printf("Working on %s ...\n", m.Path)
-		log.Println(terragrunt_bin, " ", tgArgs)
-		err := m.Exec(terragrunt_bin, tgArgs...)
+		log.Printf("Working on %s ...\n", m.GetPath)
+		log.Println(terragruntBin, " ", tgArgs)
+		err := m.Exec(terragruntBin, tgArgs...)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
-}
-
-func printList(l []string) {
-	for n, s := range l {
-		fmt.Println(n+1, " - ", s)
-	}
-}
-
-func readConfigEnv() map[string]string {
-	config_vars := []string{
-		cfgVar_TERRASOLVER_PATH,
-		cfgVar_TERRASOLVER_SKIP_CONFIRM,
-	}
-	config := make(map[string]string, 0)
-
-	for _, v := range config_vars {
-		if e := os.Getenv(v); e != "" {
-			config[v] = e
-		}
-	}
-
-	return config
 }

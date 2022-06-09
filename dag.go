@@ -49,9 +49,7 @@ func (d *DAG) idsToPaths(ids []string) []string {
 	return p
 }
 
-func (d *DAG) FillDAGFromFiles(files []string) error {
-	inds := make(map[string]string)
-
+func (d *DAG) FillDAGFromFiles(files []string, deepDive bool, inds map[string]string) error {
 	for _, f := range files {
 		ff, _ := filepath.Abs(filepath.Dir(f))
 		fid := ""
@@ -81,6 +79,19 @@ func (d *DAG) FillDAGFromFiles(files []string) error {
 
 			if err = d.AddEdge(fid, pid); err != nil {
 				return err
+			}
+
+			if deepDive {
+				files, err := FindFilesByExt(pp, ".hcl")
+
+				if err != nil {
+					return err
+				}
+
+				if err := d.FillDAGFromFiles(files, deepDive, inds); err != nil {
+					return err
+				}
+
 			}
 		}
 	}

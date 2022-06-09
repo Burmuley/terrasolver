@@ -1,3 +1,0 @@
-output "something" {
-  value = "value"
-}

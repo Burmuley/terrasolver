@@ -20,10 +20,12 @@ Flags
         If set to false will only scan current working directory for dependencies.
         If set to true - will also recursively scan dependencies referenced in files within the working directory
         to build the complete dependency tree if any of modules enlist dependencies out of the working directory.
+    -version
+        Displays version and build information.
 
 Environment variables
 
-All the flags listed above can be also overridden by corresponding environment variable.
+Most of the flags listed above can be also overridden by corresponding environment variable.
 
 Note: flags set with environment variables take precedence over flags in command line!
 
@@ -35,7 +37,6 @@ Note: flags set with environment variables take precedence over flags in command
 Example:
     terrasolver -path=/home/user/infrastructure/dev -deepdive=true apply -auto-approve
 
-    -path=test/env1/us-west-2/code-deploy -deepdive=true plan                                                            burmuley@RRG-MacPro15
     2022/06/08 21:01:18 Terragrunt modules directory: /home/user/infrastructure/dev
     Running order for modules in '/home/user/infrastructure/dev':
     #1: /home/user/infrastructure/dev/us-west-2/ecs-clusters

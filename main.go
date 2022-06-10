@@ -115,6 +115,7 @@ func main() {
 	autoApprove, _ := strconv.ParseBool(config[cfgTerrasolverAutoApprove])
 	if autoApprove {
 		hasAutoApprove := false
+		applyCommand := false
 		for _, arg := range tgArgs {
 			if strings.Contains(arg, "-auto-approve") {
 				hasAutoApprove = true
@@ -122,7 +123,16 @@ func main() {
 			}
 		}
 
-		if !hasAutoApprove {
+		// only add -auto-approve flag if command is `apply`
+		// (not supported for other Terraform commands)
+		for _, arg := range tgArgs {
+			if strings.Contains(arg, "apply") {
+				applyCommand = true
+				break
+			}
+		}
+
+		if !hasAutoApprove && applyCommand {
 			tgArgs = append(tgArgs, "-auto-approve")
 		}
 	}

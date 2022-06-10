@@ -11,16 +11,21 @@ import (
 
 type DAG struct {
 	*dag.DAG
+	reverse bool
 }
 
 func NewDAG() *DAG {
-	d := &DAG{}
+	d := &DAG{reverse: true}
 	d.DAG = dag.NewDAG()
 	return d
 }
 
+func (d *DAG) SetReverse(r bool) {
+	d.reverse = r
+}
+
 func (d *DAG) TopologicalSort() ([]string, error) {
-	l, err := topologicalSortRecursive(d.DAG)
+	l, err := topologicalSortRecursive(d.DAG, d.reverse)
 	l = d.idsToPaths(l)
 	return l, err
 }
@@ -105,19 +110,25 @@ func (d *DAG) FillDAGFromFiles(files []string, deepDive bool, inds map[string]st
 	return nil
 }
 
-func topologicalSortRecursive(d *dag.DAG) ([]string, error) {
+func topologicalSortRecursive(d *dag.DAG, reverse bool) ([]string, error) {
 	visited := make(map[string]struct{})
 	stack := make([]string, 0, len(d.GetVertices()))
 
 	for id := range d.GetVertices() {
 		if _, ok := visited[id]; !ok {
 			if err := topologicalSortUtil(d, &stack, visited, id); err != nil {
-				return reverseList(stack), err
+				if reverse {
+					stack = reverseList(stack)
+				}
+				return stack, err
 			}
 		}
 	}
 
-	return reverseList(stack), nil
+	if reverse {
+		stack = reverseList(stack)
+	}
+	return stack, nil
 }
 
 func topologicalSortUtil(d *dag.DAG, stack *[]string, visited map[string]struct{}, id string) error {

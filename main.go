@@ -150,6 +150,14 @@ func main() {
 
 	// Create a DAG and fill it from the list of detected Terragrunt modules
 	dag := NewDAG()
+	// check if command line contains `destroy` command and
+	// do not reverse topological sort result if `destroy` command present
+	for _, arg := range tgArgs {
+		if strings.EqualFold(arg, "destroy") {
+			dag.SetReverse(false)
+			break
+		}
+	}
 	deepDive, _ := strconv.ParseBool(config[cfgTerrasolverDeepDive])
 	inds := make(map[string]string)
 	if err := dag.FillDAGFromFiles(files, deepDive, inds); err != nil {
@@ -176,7 +184,7 @@ func main() {
 	q := NewExecQueue(sorted)
 
 	for m := q.Next(); m != nil; m = q.Next() {
-		log.Printf("Working on %s ...\n", m.GetPath)
+		log.Printf("Working on %s ...\n", m.GetPath())
 		log.Println(terragruntBin, " ", tgArgs)
 		err := m.Exec(terragruntBin, tgArgs...)
 		if err != nil {

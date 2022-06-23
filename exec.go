@@ -27,6 +27,7 @@ type ExecModule struct {
 	Stdout    []byte
 	Stderr    []byte
 	ExitCode  int
+	EnvVars   []string
 }
 
 func (m *ExecModule) GetPath() string {
@@ -36,6 +37,9 @@ func (m *ExecModule) GetPath() string {
 func (m *ExecModule) Exec(name string, arg ...string) error {
 	cmd := exec.Command(name, arg...)
 	cmd.Dir = m.Path
+	if len(m.EnvVars) > 0 {
+		cmd.Env = m.EnvVars
+	}
 	pt, startErr := pty.Start(cmd)
 	defer func() { _ = pt.Close() }()
 
@@ -84,7 +88,7 @@ func (e *ExecQueue) Next() Module {
 	return e.modules[e.current]
 }
 
-func NewExecQueue(modules []string) Queue {
+func NewExecQueue(modules []string, env []string) Queue {
 	q := &ExecQueue{
 		modules: make([]Module, 0, len(modules)),
 	}
@@ -93,6 +97,7 @@ func NewExecQueue(modules []string) Queue {
 		exm := &ExecModule{
 			Path:      m,
 			Processed: false,
+			EnvVars:   env,
 		}
 
 		q.modules = append(q.modules, exm)

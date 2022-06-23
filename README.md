@@ -31,6 +31,9 @@ Supported flags:
 * `-deepdive` - If set to `false` will only scan current working directory for dependencies, 
    If set to `true` - will also recursively scan dependencies referenced in files within the working directory
   to build the complete dependency tree if any of modules enlist dependencies out of the working directory.
+* `-tf-cache-dir` - enables Terraform [provider plugin cache directory](https://www.terraform.io/cli/config/config-file#provider-plugin-cache)
+   and exports corresponding environment variable `TF_PLUGIN_CACHE_DIR` for each module when running;
+   default value is `~/.terraform.d/plugin-cache` 
 * `-version` - displays version and build information
 
 Most of the flags listed above can be also overridden by corresponding environment variables.
@@ -41,6 +44,7 @@ Most of the flags listed above can be also overridden by corresponding environme
 * `TERRASOLVER_SKIP_CONFIRM` - same as `-skip-confirm` flag
 * `TERRASOLVER_TERRAGRUNT_BIN` - same as `-terragrunt` flag
 * `TERRASOLVER_DEEP_DIVE` - same as `-deepdive` flag
+* `TF_PLUGIN_CACHE_DIR` - overrides value set with `-tf-cache-dir`, uses the same variable name as Terraform
 
 Example:
 ```shell

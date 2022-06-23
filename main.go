@@ -60,6 +60,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -71,6 +72,7 @@ const (
 	cfgTerragruntBinary       = "TERRASOLVER_TERRAGRUNT_BIN"
 	cfgTerrasolverDeepDive    = "TERRASOLVER_DEEP_DIVE"
 	cfgTerrasolverAutoApprove = "TERRASOLVER_AUTO_APPROVE"
+	cfgTerraformCacheDir      = "TF_PLUGIN_CACHE_DIR"
 )
 
 var (
@@ -92,6 +94,7 @@ func main() {
 	tsDeepDive := flag.Bool("deepdive", true, "Deep scan for dependencies")
 	tsAddAutoApprove := flag.Bool("auto-approve", true, "Automatically add `-auto-approve` flag to the Terragrunt arugs")
 	tsVersion := flag.Bool("version", false, "Show version information")
+	tsTfCache := flag.String("tf-cache-dir", "~/.terraform.d/plugin-cache", "Path to Terraform plugin cache. Disabled if set to empty string")
 	flag.Parse()
 	tgArgs := flag.Args()
 
@@ -108,31 +111,42 @@ func main() {
 		cfgTerragruntBinary:       *tsTerragruntBin,
 		cfgTerrasolverDeepDive:    fmt.Sprintf("%v", *tsDeepDive),
 		cfgTerrasolverAutoApprove: fmt.Sprintf("%v", *tsAddAutoApprove),
+		cfgTerraformCacheDir:      *tsTfCache,
 	}
 	config = readConfigEnv(config)
+
+	// if Terraform plugin-cache directory is set to non-empty value
+	// check if the defined directory exists and create if not
+	envVars := make([]string, 0)
+	if len(config[cfgTerraformCacheDir]) > 0 {
+		var cacheErr error
+		usr, _ := user.Current()
+		userHome := usr.HomeDir
+		path := config[cfgTerraformCacheDir]
+		if strings.Contains(path, "~") || strings.Contains(path, "$HOME") {
+			path = strings.ReplaceAll(path, "~", userHome)
+			path = strings.ReplaceAll(path, "$HOME", userHome)
+		}
+		path, _ = filepath.Abs(path)
+		if _, cacheErr = os.Stat(path); os.IsNotExist(cacheErr) {
+			if cacheErr = os.MkdirAll(path, 0755); cacheErr != nil {
+				log.Printf("error creating Terraform cache directory: %s\n", cacheErr)
+			}
+		}
+
+		if cacheErr == nil {
+			envVars = append(envVars, strings.Join([]string{cfgTerraformCacheDir, path}, "="))
+		}
+	}
+
+	envVars = append(os.Environ(), envVars...)
 
 	// check if auto-approve is present in tgArgs and add if missing
 	autoApprove, _ := strconv.ParseBool(config[cfgTerrasolverAutoApprove])
 	if autoApprove {
-		hasAutoApprove := false
-		applyCommand := false
-		for _, arg := range tgArgs {
-			if strings.Contains(arg, "-auto-approve") {
-				hasAutoApprove = true
-				break
-			}
-		}
-
 		// only add -auto-approve flag if command is `apply`
 		// (not supported for other Terraform commands)
-		for _, arg := range tgArgs {
-			if strings.Contains(arg, "apply") {
-				applyCommand = true
-				break
-			}
-		}
-
-		if !hasAutoApprove && applyCommand {
+		if !strIsInSlice(tgArgs, "-auto-approve") && strIsInSlice(tgArgs, "apply") {
 			tgArgs = append(tgArgs, "-auto-approve")
 		}
 	}
@@ -181,8 +195,8 @@ func main() {
 		_, _ = b.ReadString('\n')
 	}
 
-	q := NewExecQueue(sorted)
-
+	// execute modules in the sorted sequence
+	q := NewExecQueue(sorted, envVars)
 	for m := q.Next(); m != nil; m = q.Next() {
 		log.Printf("Working on %s ...\n", m.GetPath())
 		log.Println(terragruntBin, " ", tgArgs)

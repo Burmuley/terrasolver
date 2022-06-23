@@ -1,18 +1,30 @@
 package main
 
-import "os"
+import (
+	"os"
+)
 
 func readConfigEnv(config map[string]string) map[string]string {
-	config_vars := make([]string, 0, len(config))
+	configVars := make([]string, 0, len(config))
 	for k := range config {
-		config_vars = append(config_vars, k)
+		configVars = append(configVars, k)
 	}
 
-	for _, v := range config_vars {
+	for _, v := range configVars {
 		if e := os.Getenv(v); e != "" {
 			config[v] = e
 		}
 	}
 
 	return config
+}
+
+func strIsInSlice(sl []string, s string) bool {
+	for _, v := range sl {
+		if v == s {
+			return true
+		}
+	}
+
+	return false
 }

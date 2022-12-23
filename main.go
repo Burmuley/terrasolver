@@ -60,6 +60,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -86,13 +87,23 @@ const (
 	terragruntBinDefault = "/usr/local/bin/terragrunt"
 )
 
+func lookUpTerragruntBin(defaultPath string) string {
+	path, err := exec.LookPath("terragrunt")
+	if err != nil {
+		log.Printf("Terragrunt binary was not found in path, using default value %s", defaultPath)
+		return defaultPath
+	}
+
+	return path
+}
+
 func main() {
 	// setup and parse command line args
 	cwd, _ := os.Getwd()
 	tsPath := flag.String("path", cwd, "Path to Terragrunt working directory")
 	tsSkipConfirm := flag.Bool("skip-confirm", false, "Skip confirmation user input request")
 	tsSuppressWarnings := flag.Bool("supress-warning", true, "Suppress warning messages about dependency graph processing")
-	tsTerragruntBin := flag.String("terragrunt", terragruntBinDefault, "Path to Terragrunt binary")
+	tsTerragruntBin := flag.String("terragrunt", lookUpTerragruntBin(terragruntBinDefault), "Path to Terragrunt binary")
 	tsDeepDive := flag.Bool("deepdive", true, "Deep scan for dependencies")
 	tsAddAutoApprove := flag.Bool("auto-approve", true, "Automatically add `-auto-approve` flag to the Terragrunt arugs")
 	tsVersion := flag.Bool("version", false, "Show version information")

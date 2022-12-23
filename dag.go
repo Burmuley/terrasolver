@@ -55,7 +55,7 @@ func (d *DAG) idsToPaths(ids []string) []string {
 	return p
 }
 
-func (d *DAG) FillDAGFromFiles(files []string, deepDive bool, inds map[string]string) error {
+func (d *DAG) FillDAGFromFiles(files []string, deepDive bool, inds map[string]string, warnings bool) error {
 	for _, f := range files {
 		ff, _ := filepath.Abs(filepath.Dir(f))
 		fid := ""
@@ -87,7 +87,9 @@ func (d *DAG) FillDAGFromFiles(files []string, deepDive bool, inds map[string]st
 				// skip adding edge if error is EdgeDuplicateError
 				// return err in all other cases
 				if errors.As(err, &dag.EdgeDuplicateError{}) {
-					log.Printf("%s, skipping", errConvertIdToPath(err, d))
+					if warnings {
+						log.Printf("%s, skipping", errConvertIdToPath(err, d))
+					}
 				} else {
 					return err
 				}
@@ -100,7 +102,7 @@ func (d *DAG) FillDAGFromFiles(files []string, deepDive bool, inds map[string]st
 					return err
 				}
 
-				if err := d.FillDAGFromFiles(files, deepDive, inds); err != nil {
+				if err := d.FillDAGFromFiles(files, deepDive, inds, warnings); err != nil {
 					return err
 				}
 			}

@@ -28,7 +28,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          files:
-            - terrasolver_mac_amd64
-            - terrasolver_mac_arm64
-            - terrasolver_linux_amd64
+          files: |
+            terrasolver_mac_amd64
+            terrasolver_mac_arm64
+            terrasolver_linux_amd64

@@ -56,6 +56,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -65,6 +66,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -75,6 +77,7 @@ const (
 	cfgTerrasolverAutoApprove     = "TERRASOLVER_AUTO_APPROVE"
 	cfgTerraformCacheDir          = "TF_PLUGIN_CACHE_DIR"
 	cfgTerrasolverSuppressWarning = "TERRASOLVER_SUPPRESS_WARNINGS"
+	cfgTerrasolverNoCace          = "TERRASOLVER_NO_CACHE"
 )
 
 var (
@@ -108,6 +111,9 @@ func main() {
 	tsAddAutoApprove := flag.Bool("auto-approve", true, "Automatically add `-auto-approve` flag to the Terragrunt arugs")
 	tsVersion := flag.Bool("version", false, "Show version information")
 	tsTfCache := flag.String("tf-cache-dir", "~/.terraform.d/plugin-cache", "Path to Terraform plugin cache. Disabled if set to empty string")
+	tsNoCache := flag.Bool("no-cache", false, "Toggle Terrasolver cache")
+	tsCacheDuration := flag.Int("cache-duration", 30, "Cache duration")
+
 	flag.Parse()
 	tgArgs := flag.Args()
 
@@ -126,6 +132,7 @@ func main() {
 		cfgTerrasolverAutoApprove:     fmt.Sprintf("%v", *tsAddAutoApprove),
 		cfgTerraformCacheDir:          *tsTfCache,
 		cfgTerrasolverSuppressWarning: fmt.Sprintf("%v", tsSuppressWarnings),
+		cfgTerrasolverNoCace:          fmt.Sprintf("%v", *tsNoCache),
 	}
 	config = readConfigEnv(config)
 
@@ -210,14 +217,44 @@ func main() {
 		_, _ = b.ReadString('\n')
 	}
 
+	// init cache and load existing contents from file
+	cache := NewCache(".terrasolver-cache")
+	noCache, _ := strconv.ParseBool(config[cfgTerrasolverNoCace])
+	if noCache {
+		cache.Disable()
+	}
+
+	ferr := cache.Load()
+
+	if ferr != nil {
+		if errors.Is(ferr, os.ErrNotExist) {
+			log.Printf("No cache file found, proceeding with new cache.")
+		} else {
+			log.Fatalf("Error loading cache: %s\n", ferr.Error())
+		}
+	}
+
 	// execute modules in the sorted sequence
 	q := NewExecQueue(sorted, envVars)
 	for m := q.Next(); m != nil; m = q.Next() {
-		log.Printf("Working on %s ...\n", m.GetPath())
+		cp := m.GetPath()
+		log.Printf("Working on %s ...\n", cp)
 		log.Println(terragruntBin, " ", tgArgs)
+		if !cache.Expired(cp, time.Minute*time.Duration(*tsCacheDuration)) {
+			log.Printf("Module '%s' has been applied recently, skipping...", cp)
+			continue
+		}
 		err := m.Exec(terragruntBin, tgArgs...)
 		if err != nil {
+			if err := cache.Dump(); err != nil {
+				log.Printf("Error dumping cache: %s\n", err.Error())
+			}
 			log.Fatal(err)
 		}
+		cache.Add(cp, time.Now())
+	}
+
+	if err := cache.Dump(); err != nil {
+		log.Fatal(err)
 	}
 }

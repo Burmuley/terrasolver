@@ -70,14 +70,14 @@ import (
 )
 
 const (
-	cfgTerrasolverPath            = "TERRASOLVER_PATH"
-	cfgTerrasolverSkipConfirm     = "TERRASOLVER_SKIP_CONFIRM"
-	cfgTerragruntBinary           = "TERRASOLVER_TERRAGRUNT_BIN"
-	cfgTerrasolverDeepDive        = "TERRASOLVER_DEEP_DIVE"
-	cfgTerrasolverAutoApprove     = "TERRASOLVER_AUTO_APPROVE"
-	cfgTerraformCacheDir          = "TF_PLUGIN_CACHE_DIR"
-	cfgTerrasolverSuppressWarning = "TERRASOLVER_SUPPRESS_WARNINGS"
-	cfgTerrasolverNoCace          = "TERRASOLVER_NO_CACHE"
+	cfgTerrasolverPath             = "TERRASOLVER_PATH"
+	cfgTerrasolverSkipConfirm      = "TERRASOLVER_SKIP_CONFIRM"
+	cfgTerragruntBinary            = "TERRASOLVER_TERRAGRUNT_BIN"
+	cfgTerrasolverDeepDive         = "TERRASOLVER_DEEP_DIVE"
+	cfgTerrasolverAutoApprove      = "TERRASOLVER_AUTO_APPROVE"
+	cfgTerraformCacheDir           = "TF_PLUGIN_CACHE_DIR"
+	cfgTerrasolverSuppressWarnings = "TERRASOLVER_SUPPRESS_WARNINGS"
+	cfgTerrasolverNoCache          = "TERRASOLVER_NO_CACHE"
 )
 
 var (
@@ -105,7 +105,7 @@ func main() {
 	cwd, _ := os.Getwd()
 	tsPath := flag.String("path", cwd, "Path to Terragrunt working directory")
 	tsSkipConfirm := flag.Bool("skip-confirm", false, "Skip confirmation user input request")
-	tsSuppressWarnings := flag.Bool("supress-warning", true, "Suppress warning messages about dependency graph processing")
+	tsSuppressWarnings := flag.Bool("supress-warnings", true, "Suppress warning messages about dependency graph processing")
 	tsTerragruntBin := flag.String("terragrunt", lookUpTerragruntBin(terragruntBinDefault), "Path to Terragrunt binary")
 	tsDeepDive := flag.Bool("deepdive", true, "Deep scan for dependencies")
 	tsAddAutoApprove := flag.Bool("auto-approve", true, "Automatically add `-auto-approve` flag to the Terragrunt arugs")
@@ -125,14 +125,14 @@ func main() {
 	}
 
 	config := map[string]string{
-		cfgTerrasolverPath:            *tsPath,
-		cfgTerrasolverSkipConfirm:     fmt.Sprintf("%v", *tsSkipConfirm),
-		cfgTerragruntBinary:           *tsTerragruntBin,
-		cfgTerrasolverDeepDive:        fmt.Sprintf("%v", *tsDeepDive),
-		cfgTerrasolverAutoApprove:     fmt.Sprintf("%v", *tsAddAutoApprove),
-		cfgTerraformCacheDir:          *tsTfCache,
-		cfgTerrasolverSuppressWarning: fmt.Sprintf("%v", tsSuppressWarnings),
-		cfgTerrasolverNoCace:          fmt.Sprintf("%v", *tsNoCache),
+		cfgTerrasolverPath:             *tsPath,
+		cfgTerrasolverSkipConfirm:      fmt.Sprintf("%v", *tsSkipConfirm),
+		cfgTerragruntBinary:            *tsTerragruntBin,
+		cfgTerrasolverDeepDive:         fmt.Sprintf("%v", *tsDeepDive),
+		cfgTerrasolverAutoApprove:      fmt.Sprintf("%v", *tsAddAutoApprove),
+		cfgTerraformCacheDir:           *tsTfCache,
+		cfgTerrasolverSuppressWarnings: fmt.Sprintf("%v", tsSuppressWarnings),
+		cfgTerrasolverNoCache:          fmt.Sprintf("%v", *tsNoCache),
 	}
 	config = readConfigEnv(config)
 
@@ -194,7 +194,7 @@ func main() {
 		}
 	}
 	deepDive, _ := strconv.ParseBool(config[cfgTerrasolverDeepDive])
-	warnings, _ := strconv.ParseBool(config[cfgTerrasolverSuppressWarning])
+	warnings, _ := strconv.ParseBool(config[cfgTerrasolverSuppressWarnings])
 	inds := make(map[string]string)
 	if err := dag.FillDAGFromFiles(files, deepDive, inds, warnings); err != nil {
 		log.Fatal(errConvertIdToPath(err, dag))
@@ -219,7 +219,7 @@ func main() {
 
 	// init cache and load existing contents from file
 	cache := NewCache(".terrasolver-cache")
-	noCache, _ := strconv.ParseBool(config[cfgTerrasolverNoCace])
+	noCache, _ := strconv.ParseBool(config[cfgTerrasolverNoCache])
 	if noCache {
 		cache.Disable()
 	}

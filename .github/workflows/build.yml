@@ -1,9 +1,7 @@
 on:
   push:
-    branches:
-      - improvements_2
-#    tags:
-#      - "v*.*.*"
+    tags:
+      - "v*.*.*"
 name: Build Linux binary
 jobs:
   build_linux:

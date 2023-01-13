@@ -56,23 +56,28 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
-	cfgTerrasolverPath        = "TERRASOLVER_PATH"
-	cfgTerrasolverSkipConfirm = "TERRASOLVER_SKIP_CONFIRM"
-	cfgTerragruntBinary       = "TERRASOLVER_TERRAGRUNT_BIN"
-	cfgTerrasolverDeepDive    = "TERRASOLVER_DEEP_DIVE"
-	cfgTerrasolverAutoApprove = "TERRASOLVER_AUTO_APPROVE"
-	cfgTerraformCacheDir      = "TF_PLUGIN_CACHE_DIR"
+	cfgTerrasolverPath             = "TERRASOLVER_PATH"
+	cfgTerrasolverSkipConfirm      = "TERRASOLVER_SKIP_CONFIRM"
+	cfgTerragruntBinary            = "TERRASOLVER_TERRAGRUNT_BIN"
+	cfgTerrasolverDeepDive         = "TERRASOLVER_DEEP_DIVE"
+	cfgTerrasolverAutoApprove      = "TERRASOLVER_AUTO_APPROVE"
+	cfgTerraformCacheDir           = "TF_PLUGIN_CACHE_DIR"
+	cfgTerrasolverSuppressWarnings = "TERRASOLVER_SUPPRESS_WARNINGS"
+	cfgTerrasolverNoCache          = "TERRASOLVER_NO_CACHE"
 )
 
 var (
@@ -85,16 +90,30 @@ const (
 	terragruntBinDefault = "/usr/local/bin/terragrunt"
 )
 
+func lookUpTerragruntBin(defaultPath string) string {
+	path, err := exec.LookPath("terragrunt")
+	if err != nil {
+		log.Printf("Terragrunt binary was not found in path, using default value %s", defaultPath)
+		return defaultPath
+	}
+
+	return path
+}
+
 func main() {
 	// setup and parse command line args
 	cwd, _ := os.Getwd()
 	tsPath := flag.String("path", cwd, "Path to Terragrunt working directory")
 	tsSkipConfirm := flag.Bool("skip-confirm", false, "Skip confirmation user input request")
-	tsTerragruntBin := flag.String("terragrunt", terragruntBinDefault, "Path to Terragrunt binary")
+	tsSuppressWarnings := flag.Bool("supress-warnings", true, "Suppress warning messages about dependency graph processing")
+	tsTerragruntBin := flag.String("terragrunt", lookUpTerragruntBin(terragruntBinDefault), "Path to Terragrunt binary")
 	tsDeepDive := flag.Bool("deepdive", true, "Deep scan for dependencies")
 	tsAddAutoApprove := flag.Bool("auto-approve", true, "Automatically add `-auto-approve` flag to the Terragrunt arugs")
 	tsVersion := flag.Bool("version", false, "Show version information")
 	tsTfCache := flag.String("tf-cache-dir", "~/.terraform.d/plugin-cache", "Path to Terraform plugin cache. Disabled if set to empty string")
+	tsNoCache := flag.Bool("no-cache", false, "Toggle Terrasolver cache")
+	tsCacheDuration := flag.Int("cache-duration", 30, "Cache duration")
+
 	flag.Parse()
 	tgArgs := flag.Args()
 
@@ -106,12 +125,14 @@ func main() {
 	}
 
 	config := map[string]string{
-		cfgTerrasolverPath:        *tsPath,
-		cfgTerrasolverSkipConfirm: fmt.Sprintf("%v", *tsSkipConfirm),
-		cfgTerragruntBinary:       *tsTerragruntBin,
-		cfgTerrasolverDeepDive:    fmt.Sprintf("%v", *tsDeepDive),
-		cfgTerrasolverAutoApprove: fmt.Sprintf("%v", *tsAddAutoApprove),
-		cfgTerraformCacheDir:      *tsTfCache,
+		cfgTerrasolverPath:             *tsPath,
+		cfgTerrasolverSkipConfirm:      fmt.Sprintf("%v", *tsSkipConfirm),
+		cfgTerragruntBinary:            *tsTerragruntBin,
+		cfgTerrasolverDeepDive:         fmt.Sprintf("%v", *tsDeepDive),
+		cfgTerrasolverAutoApprove:      fmt.Sprintf("%v", *tsAddAutoApprove),
+		cfgTerraformCacheDir:           *tsTfCache,
+		cfgTerrasolverSuppressWarnings: fmt.Sprintf("%v", tsSuppressWarnings),
+		cfgTerrasolverNoCache:          fmt.Sprintf("%v", *tsNoCache),
 	}
 	config = readConfigEnv(config)
 
@@ -173,8 +194,9 @@ func main() {
 		}
 	}
 	deepDive, _ := strconv.ParseBool(config[cfgTerrasolverDeepDive])
+	warnings, _ := strconv.ParseBool(config[cfgTerrasolverSuppressWarnings])
 	inds := make(map[string]string)
-	if err := dag.FillDAGFromFiles(files, deepDive, inds); err != nil {
+	if err := dag.FillDAGFromFiles(files, deepDive, inds, warnings); err != nil {
 		log.Fatal(errConvertIdToPath(err, dag))
 	}
 
@@ -195,14 +217,44 @@ func main() {
 		_, _ = b.ReadString('\n')
 	}
 
+	// init cache and load existing contents from file
+	cache := NewCache(".terrasolver-cache")
+	noCache, _ := strconv.ParseBool(config[cfgTerrasolverNoCache])
+	if noCache {
+		cache.Disable()
+	}
+
+	ferr := cache.Load()
+
+	if ferr != nil {
+		if errors.Is(ferr, os.ErrNotExist) {
+			log.Printf("No cache file found, proceeding with new cache.")
+		} else {
+			log.Fatalf("Error loading cache: %s\n", ferr.Error())
+		}
+	}
+
 	// execute modules in the sorted sequence
 	q := NewExecQueue(sorted, envVars)
 	for m := q.Next(); m != nil; m = q.Next() {
-		log.Printf("Working on %s ...\n", m.GetPath())
+		cp := m.GetPath()
+		log.Printf("Working on %s ...\n", cp)
 		log.Println(terragruntBin, " ", tgArgs)
+		if !cache.Expired(cp, time.Minute*time.Duration(*tsCacheDuration)) {
+			log.Printf("Module '%s' has been applied recently, skipping...", cp)
+			continue
+		}
 		err := m.Exec(terragruntBin, tgArgs...)
 		if err != nil {
+			if err := cache.Dump(); err != nil {
+				log.Printf("Error dumping cache: %s\n", err.Error())
+			}
 			log.Fatal(err)
 		}
+		cache.Add(cp, time.Now())
+	}
+
+	if err := cache.Dump(); err != nil {
+		log.Fatal(err)
 	}
 }

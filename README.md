@@ -34,6 +34,9 @@ Supported flags:
 * `-tf-cache-dir` - enables Terraform [provider plugin cache directory](https://www.terraform.io/cli/config/config-file#provider-plugin-cache)
    and exports corresponding environment variable `TF_PLUGIN_CACHE_DIR` for each module when running;
    default value is `~/.terraform.d/plugin-cache` 
+* `-no-cache` - disable Terragrunt modules "caching"
+* `-cache-duration` - how long (in minutes) modules listed in cache won't be run; default value is `30` minutes
+* `-supress-warning` - suppress warning messages about dependency graph processing; default is `true`
 * `-version` - displays version and build information
 
 Most of the flags listed above can be also overridden by corresponding environment variables.
@@ -45,6 +48,8 @@ Most of the flags listed above can be also overridden by corresponding environme
 * `TERRASOLVER_TERRAGRUNT_BIN` - same as `-terragrunt` flag
 * `TERRASOLVER_DEEP_DIVE` - same as `-deepdive` flag
 * `TF_PLUGIN_CACHE_DIR` - overrides value set with `-tf-cache-dir`, uses the same variable name as Terraform
+* `TERRASOLVER_SUPPRESS_WARNINGS` - same as `-supress-warning`
+* `TERRASOLVER_NO_CACHE` - same as `-no-cache`
 
 Example:
 ```shell

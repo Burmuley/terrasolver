@@ -1,3 +1,4 @@
 *.terragrunt-cache*
+*.terrasolver-cache*
 *.terraform*
 .idea/
